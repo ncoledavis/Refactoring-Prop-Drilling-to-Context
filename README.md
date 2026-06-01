@@ -1,29 +1,66 @@
-# Recipe Gallery - Theme Switcher
+# Recipe Gallery - Context API Refactor
 
-A React application that demonstrates global theme management using the Context API. It is built on top of a Recipe Gallery app and adds a light/dark mode toggle that applies across every page without prop drilling.
+A React application that started as a theme-switcher demo and has been expanded to demonstrate a full Context API refactor. The app now manages global theme state, multi-user profiles, and per-user recipe favorites — all without prop drilling.
+YouTube Link: https://youtu.be/HFkJmSmqMBE
 
-## What it does
+## What changed from the original
 
-The app uses React's `createContext` to create a global theme state that any component in the tree can read. A custom `ThemeProvider` component manages the toggle logic and writes a `data-theme` attribute to the root HTML element whenever the theme changes. CSS custom properties keyed off that attribute handle the visual switch, so the entire page updates at once.
+The original project only had `ThemeContext` and a light/dark toggle. Here is everything that has been added or changed on top of that starting point.
 
-The toggle button lives in the navbar and persists your preference to `localStorage`, so it is remembered on page refresh.
+### UserContext (new)
+
+A second context, `UserContext`, was added to manage a roster of users and which one is currently active. Any component in the tree can read the active user or switch users without receiving props from a parent.
+
+`UserProvider` exposes:
+- `user` — the currently active user object
+- `users` — the full user roster
+- `selectUser(id)` — switches the active user and syncs the theme to their saved preference
+- `favorites` — a map of `{ userId: recipeId[] }` so each user has their own independent list of saved recipes
+- `toggleFavorite(recipeId)` — adds or removes a recipe from the active user's favorites
+- `isFavorite(recipeId)` — returns true if the active user has saved that recipe
+- `updateUserTheme(theme)` — updates the active user's stored theme preference
+
+### Theme preference is now per-user
+
+When you toggle light/dark mode, the new theme is saved to the active user's profile. When you switch users, the app loads that user's last saved theme preference. Each user remembers their own setting independently.
+
+### Profiles page (renamed from Dashboard)
+
+The route `/dashboard` has been renamed to `/profiles` and the page has been updated to reflect that. The page still demonstrates the Context API component tree (`App → Profiles → Sidebar → UserProfile`) but now the `UserProfile` component also shows each user's saved favorite recipes.
+
+### Favorite recipes
+
+Each recipe card in the Gallery has a heart button in the top-right corner of the thumbnail. The RecipeDetail page has a Favorite button next to the recipe title. Clicking either one adds or removes that recipe from the active user's favorites list. Favorites are stored per-user, so Alex and Jordan each have their own independent list.
+
+The Navbar shows a live count of the active user's saved favorites and links directly to the Profiles page.
+
+### Local image asset
+
+The Avocado Toast recipe previously used a broken external image URL. It now loads from a local file at `src/assets/avocado-toast.jpg`.
 
 ## Project structure
 
 ```
 src/
   context/
-    ThemeContext.jsx    - createContext, ThemeProvider, and useTheme hook
+    ThemeContext.jsx    - createContext, ThemeProvider, useTheme hook
+    UserContext.jsx     - createContext, UserProvider, useUser hook (new)
   components/
-    Navbar.jsx          - navbar with the theme toggle button
+    Navbar.jsx          - navbar with theme toggle and favorites count pill
+    Sidebar.jsx         - layout sidebar (passes no user props)
+    UserProfile.jsx     - displays active user info and their saved favorites
+    UserSwitcher.jsx    - buttons to switch the active user
   routes/
     Home.jsx            - home page with hero and featured recipes
-    Gallery.jsx         - full recipe grid
-    RecipeDetail.jsx    - single recipe detail view
+    Gallery.jsx         - full recipe grid with per-recipe favorite buttons
+    RecipeDetail.jsx    - single recipe detail view with favorite button
+    Profiles.jsx        - profiles page showing the Context API tree
   data/
     recipes.js          - shared recipe data
+  assets/
+    avocado-toast.jpg   - local image asset (new)
   App.jsx               - route definitions
-  main.tsx              - app entry point
+  main.tsx              - app entry point, AppRoot wires ThemeProvider and UserProvider together
   app.css               - CSS custom properties for light and dark themes
 ```
 
@@ -35,7 +72,7 @@ src/
 
 ```bash
 git clone <your-repo-url>
-cd theme-switcher-app
+cd context-refractor-app
 ```
 
 2. Install dependencies.
@@ -60,9 +97,17 @@ npm run dev
 | `npm run build` | Builds the app for production |
 | `npm run preview` | Previews the production build locally |
 
-## How the theme system works
+## How the context system works
 
-1. `ThemeContext.jsx` calls `createContext` to create the context object and exports it along with the `ThemeProvider` component and a `useTheme` convenience hook.
-2. `ThemeProvider` wraps the entire app in `main.tsx`. It holds the `theme` state, runs a `useEffect` to sync it to `localStorage` and to `document.documentElement`, and passes both `theme` and `toggleTheme` down through the context.
-3. Any component that needs the theme calls `useTheme()` to get the current value and the toggle function, with no prop drilling required.
-4. `app.css` defines CSS custom properties under `:root` for light mode and overrides them under `[data-theme="dark"]`. Because every component references these variables, the visual update is instant and global.
+### Theme
+
+1. `ThemeContext.jsx` creates the context and exports `ThemeProvider` and `useTheme`.
+2. `ThemeProvider` holds the `theme` state, syncs it to `localStorage` and `document.documentElement`, and calls `onThemeChange` whenever the toggle fires so `AppRoot` can forward the new value to `UserProvider`.
+3. `app.css` defines CSS custom properties under `:root` for light mode and overrides them under `[data-theme="dark"]`.
+
+### Users and favorites
+
+1. `UserContext.jsx` creates the context and exports `UserProvider` and `useUser`.
+2. `UserProvider` holds the active user, per-user theme preferences, and per-user favorites arrays.
+3. `AppRoot` in `main.tsx` sits between the two providers and coordinates them — when the theme toggle fires it calls `updateUserTheme` on `UserProvider`, and when a user is switched it passes that user's saved theme preference back to `ThemeProvider` via `initialTheme`.
+4. Components that need user data or favorites call `useUser()` directly — no props are passed through intermediate components.
